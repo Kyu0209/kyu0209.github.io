@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>최규현의 포트폴리오</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Noto Serif KR', serif;
+            background: #000;
+        }
+        .content {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            z-index: 10;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        h1 {
+            font-size: 3.5em;
+            margin-bottom: 0.5em;
+            opacity: 0;
+            animation: fadeIn 2s ease forwards;
+        }
+        .subtitle {
+            font-size: 1.5em;
+            opacity: 0;
+            animation: fadeIn 2s ease 1s forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: rgba(255,255,255,0.8);
+            font-family: 'Noto Serif KR', sans-serif;
+            font-size: 0.9em;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .temp-slider {
+            -webkit-appearance: none;
+            width: 200px;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            outline: none;
+        }
+        .temp-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .temp-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .temp-value {
+            min-width: 60px;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>안녕하세요, 저는 최규현입니다</h1>
+        <div class="subtitle">확률론과 통계물리학을 연구합니다</div>
+        <div class="subtitle">주소 : </div>
+    </div>
+    <div class="controls">
+        <div class="control-row">
+            <div class="slider-container">
+                <span>Temperature:</span>
+                <input type="range" class="temp-slider" min="1" max="4" step="0.01" value="2.27">
+                <span class="value-display temp-value">2.27</span>
+            </div>
+            <div class="toggle-container">
+                <label class="toggle">
+                    <input type="checkbox" id="temp-auto" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span>Auto</span>
+            </div>
+        </div>
+        <div class="control-row">
+            <div class="slider-container">
+                <span>Field Strength:</span>
+                <input type="range" class="field-slider" id="field-strength" min="0" max="5" step="0.1" value="2.0">
+                <span class="value-display" id="field-value">2.0</span>
+            </div>
+        </div>
+        <div class="control-row">
+            <div class="slider-container">
+                <span>Field Radius:</span>
+                <input type="range" class="field-slider" id="field-radius" min="0.1" max="0.5" step="0.01" value="0.2">
+                <span class="value-display" id="radius-value">0.2</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let renderer, scene, camera;
+        let isingMaterial;
+        let temperature = 2.27;
+        let spins;
+        let spinTexture;
+        let isSliderDragging = false;
+        let lastUpdateTime = 0;
+        let mousePosition = new THREE.Vector2(-1, -1);
+        let mouseStrength = 2.0; // 마우스 자기장 세기
+        const size = 128;
+        const J = 1.0;
+        
+        function init() {
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            scene = new THREE.Scene();
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
+
+            // 초기 스핀 구성
+            spins = new Float32Array(size * size);
+            for(let i = 0; i < size; i++) {
+                for(let j = 0; j < size; j++) {
+                    const cluster = Math.floor(i/8) + Math.floor(j/8);
+                    spins[i + j * size] = (cluster % 2) * 2 - 1;
+                }
+            }
+
+            spinTexture = new THREE.DataTexture(
+                spins,
+                size,
+                size,
+                THREE.RedFormat,
+                THREE.FloatType
+            );
+            spinTexture.needsUpdate = true;
+
+            // 마우스 이벤트 추가
+            document.addEventListener('mousemove', (event) => {
+                mousePosition.x = event.clientX / window.innerWidth;
+                mousePosition.y = 1 - (event.clientY / window.innerHeight);
+            });
+            
+            // 마우스가 화면을 벗어날 때
+            document.addEventListener('mouseout', () => {
+                mousePosition.x = -1;
+                mousePosition.y = -1;
+            });
+
+            const slider = document.querySelector('.temp-slider');
+            const tempValue = document.querySelector('.temp-value');
+            
+            slider.addEventListener('mousedown', () => {
+                isSliderDragging = true;
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isSliderDragging = false;
+            });
+            
+            slider.addEventListener('input', (e) => {
+                temperature = parseFloat(e.target.value);
+                tempValue.textContent = temperature.toFixed(2);
+            });
+
+            // Ising model 셰이더
+            isingMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    spinTexture: { value: spinTexture },
+                    size: { value: size },
+                    time: { value: 0.0 },
+                    mousePosition: { value: new THREE.Vector2(-1, -1) },
+                    radius: { value: 0.2 },
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+                },
+                vertexShader: `
+                    void main() {
+                        gl_Position = vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D spinTexture;
+                    uniform float size;
+                    uniform float time;
+                    uniform vec2 resolution;
+                    uniform vec2 mousePosition;
+                    uniform float radius;
+
+                    float random(vec2 st) {
+                        return fract(sin(dot(st.xy + time * 0.001,
+                                         vec2(12.9898,78.233)))
+                                 * 43758.5453123);
+                    }
+
+                    void main() {
+                        vec2 uv = gl_FragCoord.xy / resolution.xy;
+                        
+                        // 격자에 맞추어 텍스처 좌표 계산
+                        vec2 texCoord = floor(uv * size) / size;
+                        
+                        // 스핀 값 읽기
+                        float spin = texture2D(spinTexture, texCoord).r;
+                        
+                        // 마우스와의 거리에 따른 효과
+                        float mouseDist = length(uv - mousePosition);
+                        float mouseEffect = mouseDist < radius ? 0.2 * (1.0 - mouseDist/radius) : 0.0;
+                        
+                        // 스핀 시각화
+                        vec3 upColor = vec3(0.7, 0.4, 1.0);   // 보라색
+                        vec3 downColor = vec3(0.4, 0.7, 1.0); // 하늘색
+                        
+                        vec3 color = spin > 0.0 ? upColor : downColor;
+                        
+                        // 마우스 효과 추가
+                        color += vec3(mouseEffect);
+                        
+                        // 부드러운 그라데이션 효과
+                        float noise = random(uv) * 0.05;
+                        color = mix(color, color * (0.95 + noise), 0.1);
+                        
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+
+            const quad = new THREE.PlaneGeometry(2, 2);
+            const mesh = new THREE.Mesh(quad, isingMaterial);
+            scene.add(mesh);
+
+            window.addEventListener('resize', onWindowResize, false);
+            onWindowResize();
+        }
+
+        function onWindowResize() {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            isingMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+        }
+
+        function metropolisStep() {
+            const currentTime = Date.now();
+            const deltaTime = currentTime - lastUpdateTime;
+            
+            if (deltaTime < 16) return;
+            lastUpdateTime = currentTime;
+
+            const beta = 1.0 / temperature;
+            
+            // 마우스 영향을 받는 영역 계산
+            let affectedRegion = { minI: 0, maxI: size, minJ: 0, maxJ: size };
+            if(mousePosition.x >= 0 && mousePosition.y >= 0) {
+                const centerI = Math.floor(mousePosition.x * size);
+                const centerJ = Math.floor(mousePosition.y * size);
+                const radius = Math.floor(0.2 * size); // 20% of grid size
+                
+                affectedRegion = {
+                    minI: Math.max(0, centerI - radius),
+                    maxI: Math.min(size, centerI + radius),
+                    minJ: Math.max(0, centerJ - radius),
+                    maxJ: Math.min(size, centerJ + radius)
+                };
+            }
+            
+            // 마우스 주변 영역 우선 업데이트
+            if(mousePosition.x >= 0 && mousePosition.y >= 0) {
+                for(let step = 0; step < (size * size) / 16; step++) {
+                    const i = affectedRegion.minI + Math.floor(Math.random() * (affectedRegion.maxI - affectedRegion.minI));
+                    const j = affectedRegion.minJ + Math.floor(Math.random() * (affectedRegion.maxJ - affectedRegion.minJ));
+                    updateSpin(i, j, beta);
+                }
+            }
+            
+            // 나머지 영역 업데이트
+            for(let step = 0; step < (size * size) / 8; step++) {
+                const i = Math.floor(Math.random() * size);
+                const j = Math.floor(Math.random() * size);
+                updateSpin(i, j, beta);
+            }
+            
+            if (!isSliderDragging) {
+                temperature = 2.27 + 0.5 * Math.sin(currentTime * 0.0003);
+                const slider = document.querySelector('.temp-slider');
+                const tempValue = document.querySelector('.temp-value');
+                if(slider && tempValue) {
+                    slider.value = temperature;
+                    tempValue.textContent = temperature.toFixed(2);
+                }
+            }
+            
+            spinTexture.needsUpdate = true;
+            isingMaterial.uniforms.time.value = currentTime * 0.001;
+            isingMaterial.uniforms.mousePosition.value.copy(mousePosition);
+        }
+        
+        function updateSpin(i, j, beta) {
+            const idx = i + j * size;
+            
+            // 이웃 상호작용
+            let neighborSum = 0;
+            if(i > 0) neighborSum += spins[idx - 1];
+            if(i < size - 1) neighborSum += spins[idx + 1];
+            if(j > 0) neighborSum += spins[idx - size];
+            if(j < size - 1) neighborSum += spins[idx + size];
+            
+            // 마우스 자기장 효과
+            let externalField = 0;
+            if(mousePosition.x >= 0 && mousePosition.y >= 0) {
+                const dx = i/size - mousePosition.x;
+                const dy = j/size - mousePosition.y;
+                const distance = Math.sqrt(dx*dx + dy*dy);
+                if(distance < 0.2) {
+                    externalField = mouseStrength * (1.0 - distance/0.2);
+                }
+            }
+            
+            const deltaE = 2 * spins[idx] * (J * neighborSum + externalField);
+            
+            if(deltaE <= 0 || Math.random() < Math.exp(-beta * deltaE)) {
+                spins[idx] *= -1;
+            }
+            
+            spinTexture.image.data[idx] = spins[idx];
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            metropolisStep();
+            renderer.render(scene, camera);
+        }
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
